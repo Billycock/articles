@@ -1,0 +1,59 @@
+"=========== Meta ============
+"StrID : 
+"Title : 更新至Ubuntu12.10后fontsconfig出现警告的解决办法
+"Slug  : fix-fontsconfig-warning-after-upgrading-to-ubuntu-1210
+"Cats  : Linux
+"Tags  : fontsconfig, ubuntu
+"=============================
+"EditType   : post
+"EditFormat : Markdown
+"TextAttach : vimpress_50a113a3_mkd.txt
+"========== Content ==========
+从Ubuntu12.04升级到Ubuntu12.10后，自我感觉这个发行版并不那么如人意。升级之后Fontsconfig就不停的在抱怨：
+
+    Fontconfig warning /etc/fonts/conf.d/99-language-selector-zh.conf line 11: Having multiple values inisn't supported and may not works as expected
+    Fontconfig warning: “/etc/fonts/conf.d/50-user.conf”, line 9: reading configurations from ~/.fonts.conf is deprecated.
+
+先来解决第一个问题。Google了一下发现有人报告了类似的[BUG](https://bugs.launchpad.net/ubuntu/+source/fonts-unfonts-core/+bug/1034928 Fontconfig warning: Having multiple values in <test> isn't supported and may not works as expected)：
+
+> Still no changes in the behavior in the latest version of fontconfig,
+> but it now warns when <test> contains multiple values or <alias> contains
+> multiple <family>s. this is because the behavior isn't intuitive and
+> doesn't work as expected necessarily. So you better consider to fix it
+> to make clearer what you want to do with it.
+>
+> For solution, if you are expecting OR operator with that rule, add more
+> <match>s or <alias>es. if you are expecting AND operator with that rule,
+> just add more <test>s in that <match>.
+
+所以，我们只需要将<test>中重复的值分别放到重复的<test>标签中即可，也就是说，将下面这段代码：
+
+    :::xml
+    <test name="family" compare="contains" >
+        <string>Song</string>
+        <string>Sun</string>
+        <string>Kai</string>
+        <string>Ming</string>
+    </test>
+
+替换为：
+
+    :::xml
+    <test name="family" compare="contains" >
+        <string>Song</string>
+    </test> 
+    <test name="family" compare="contains" >
+        <string>Sun</string>
+    </test> 
+    <test name="family" compare="contains" >
+        <string>Kai</string>
+    </test> 
+    <test name="family" compare="contains" >
+        <string>Ming</string>
+    </test> 
+
+再来看第二个问题，在[这里](http://ihacklog.com/post/archlinux-2012-09-07.html Archlinux 2012.09.07发布及近期几个更新问题)搜到了答案：
+
+> @依云 ：消除这个 deprecated 的警告的正确方法是把配置文件移到 ~/.config/fontconfig/fonts.conf。
+
+问题解决 :)

@@ -1,0 +1,968 @@
+"=========== Meta ============
+"StrID : 1485
+"Title : 使用Maven3构建GWT+GAE+JDO3项目教程
+"Slug  : developing-gae-gwt-project-using-maven-tutorial
+"Cats  : Java,Web
+"Tags  : GAE, GWT, JDO, Maven
+"=============================
+"EditType   : post
+"EditFormat : Markdown
+"TextAttach : wpid1600-wpid-vimpress_4f97e75b_mkd.txt
+"========== Content ==========
+
+*本文将介绍使用Maven3构建GAE+GWT项目。如果你只需要使用GWT，并不想部署到GAE上，那么可以参考笔者的[这篇教程：使用Maven3构建Google Web Toolkit项目][ref1]*
+
++ 本教程适合Maven2以上版本，若使用IDE，Netbeans原生支持Maven，Eclipse需要安装m2eclipse等插件。
++ 本教程使用maven-gae-plugin并基于该插件作者提供的原型构建、本地运行、编译和部署示例项目。
++ 本教程将前瞻性的使用最新JDO3标准和DataNucleus3实现。
++ 本教程生成的代码托管在Github中，如果改进了示例代码，不保证会更新本文，因此请访问<https://github.com/cherrot/GWT-GAE-JDO3-Maven3>获取最新代码。
++ *重要更新*:请从[上述地址](https://github.com/cherrot/GWT-GAE-JDO3-Maven3)更新pom.xml的maven-war-plugin和gwt-maven-plugin的部分，以支持mvn gwt:run命令测试运行GWT应用。
+
+**本文结构：**
+
+$TOC$
+
+真是越用越知道Maven的强大，以后写教程神马的都不如写个Maven原型来的直接痛快:D。本文就基于gae-archetype-gwt原型构建的示例项目。但是这个原型的缺陷就是pom.xml太老，跟不上时代了，如果直接替换依赖的版本号仍然会有点小问题。参考了老外写的[一篇教程][ref2]，我决定直接使用该教程中提供的pom.xml（因为这是我试过的唯一可用的配置，而且兼容最新的GWT和GAE版本）。这个家伙同时把自己的示例项目放到了GitHub上，地址如下：
+
++ [https://github.com/fuzzylollipop/Maven-3-GAE-GWT](https://github.com/fuzzylollipop/Maven-3-GAE-GWT)
+
+因此你可以按我的教程一步一步地配置GAE+GWT项目，或者偷懒直接下载上面的示例项目运行。本项目所达到的目标是：使用Maven构建、测试运行和部署GAE+GWT项目，包括了清理和编译、JDO类增强、使用开发模式Jetty服务器本地运行和部署到Google App Engine。
+
+## 创建GAE+GWT项目
+
+### 使用Netbeans创建Maven项目
+
+笔者使用的是Netbeans7.1版本，新建项目中我们选择Maven -`>` 基于原型的项目，下一步。
+
+点击“添加”按钮添加我们要使用的项目原型：groupId: net.kindleit, artifactId: gae-archetype-gwt, version 0.9.2，如下图所示：
+
+[![添加原型](http://i.imgur.com/nrgNd.png)](http://i.imgur.com/nrgNd.png)
+
+点击确定，然后定义原型所需要的属性，如下图所示：
+
+[![原型属性定义](http://i.imgur.com/MuveM.png)](http://i.imgur.com/MuveM.png)
+
+点击完成，示例项目创建成功！
+
+### 使用命令行创建Maven项目
+
+就是喜欢命令行的简单粗暴，哈哈:D
+
+	:::bash
+	mvn archetype:generate -DarchetypeGroupId=net.kindleit -DarchetypeArtifactId=gae-archetype-gwt -DarchetypeVersion=0.9.2 -DarchetypeRepository=repo1.maven.org
+
+输入命令后会以交互的方式定义属性，示例如下：
+
+	:::text
+	groupId: com.cherrot
+	artifactId: gae-gwt-sample
+	version: 1.0-SNAPSHOT
+	package: com.cherrot.gaegwtsample
+	gaeApplicationVersion: test
+
+这些属性可以自行定义，不过建议在本教程中先使用以上的取值。属性定义完毕后，稍等片刻项目就创建完毕了。在继续下面的操作前，确保你已经切换到了项目目录下（cd gae-gwt-sample）
+
+## 更新pom.xml，使用GAE1.6.4, GWT2.4.0和JDO2
+
+虽然我们的项目已经创建成功，但你会发现这个项目的配置有些问题：
+
+1. 部分依赖关系版本较老，直接换用新版本会导致项目编译/运行失败。
+2. gwt-maven-plugin插件版本太老，插件版本需要同gwtVersion对应，但直接修改版本也会导致部署失败。
+3. GAE的依赖声明为gae-runtime，类型为pom，但这导致项目无法编译，因为缺少JDO API的依赖声明。
+
+因此我们需要针对以上情况对默认的pom.xml做出改动。由于[这篇博客][ref2]就是根据我们目前使用的原型修改的pom.xml，所以为方便起见，我们直接将他的pom.xml覆盖到我们的项目中。此外还需要对该文件做点小改动。
+
+首先将pom.xml的${group.id}和${app.name}替换为刚才我们定义的值，`<groupId>`和`<artifactId>`的定义中不允许使用表达式，示例如下：
+
+	:::xml
+    <groupId>com.cherrot</groupId>
+    <artifactId>gae-gwt-sample</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>war</packaging>
+    <name>gae-gwt-sample</name>
+
+下一步需要定义GAE SDK的所在目录，原文定义在~/.m2/setting.xml 的全局属性中，不过我还是建议定义在项目的pom.xml中，这也方便项目的迁移。示例如下：
+	
+	:::xml
+	    <properties>
+			...
+	        <gae.home>/home/cherrot/sdk/appengine-java-sdk</gae.home>
+			...
+	    </properties>
+
+最后更新一下依赖版本，使用最新的GWT2.4.0，GAE 1.6.4.1(Google刚刚发布了1.6.5版本，但目前Maven仓库还没有更新到1.6.5，因此我使用1.6.4.1的依赖，并使用1.6.5的SDK目录构建本项目。我大概看了下，两个版本所依赖的第三方类库版本没有变化。)其他依赖版本也可以根据需要更新。不过需要注意的是，版本号不是说都要改成最新的，修改之前先去你的GAE SDK目录下查看一下第三方类库的版本。比如GAE默认是使用JDO 2.3版本，并使用DataNucleus1.1.x的实现，依赖datanucleus-appengine 1.0.x。我们先使用GAE默认的依赖版本运行项目，之后我们将为项目添加JDO3支持。
+
+修改完成后的pom.xml示例见附件1：使用GAE+GWT+JDO2的pom.xml示例。
+
+## 运行和部署
+
+现在，让我们测试一下项目是否可以运行：
+
+	:::bash
+	mvn gae:run
+
+如果你发现项目Build成功而开发模式服务器却不能运行，那么看一下是否是抛出了com.google.apphosting.utils.config.AppEngineConfigException异常。如果是，那么需要在appengine-web.xml中添加一行`<threadsafe>true</threadsafe>`开启线程安全。appengine-web.xml示例如下：
+
+	:::xml
+    <?xml version="1.0" encoding="utf-8"?>
+    <appengine-web-app xmlns="http://appengine.google.com/ns/1.0">
+        <application>example</application>
+		<!--It seems that the expression is unrecognizable-->
+        <!--<version>${gae.application.version}</version>-->
+		<version>test</version>
+
+        <system-properties>
+            <property name="java.util.logging.config.file" value="WEB-INF/classes/logging.properties"/>
+        </system-properties>
+
+        <sessions-enabled>true</sessions-enabled>
+        <threadsafe>true</threadsafe>
+    </appengine-web-app>
+
+然后重新运行 mvn clean gae:run 命令就可以正常运行了(日志会输出 The server is running at http://localhost:8080/)。在浏览器中打开<http://localhost:8080/>，演示效果如下图所示：
+
+[![示例项目截图1](http://i.imgur.com/Wk57u.png)](http://i.imgur.com/Wk57u.png)
+
+[![示例项目截图2](http://i.imgur.com/N3W2e.png)](http://i.imgur.com/N3W2e.png)
+
+项目运行成功！如果你想现在就把项目部署到Google App Engine上，修改你的appengine-web.xml，然后运行命令：
+
+	mvn clean gae:deploy
+
+之后会询问你的Google ID和密码，耐心等待……Got it!
+
+## 使用JDO3
+
+记住，目前GAE对JDO3的支持是实验性的。本部分内容参考了如下教程：
+
++ [Using JDO 3.0 with App Engine][jdo3-google]
++ [GAE/J and DataNucleus v3][jdo3]
+
+为了启用JDO3笔者还是走了不少弯路的，在此就不细说了。[Google关于JDO3的配置说明][jdo3-google]是有错误的，一会儿我会讲到。在本教程中，我们没有对源代码做任何修改，只需要更新pom.xml和jdoconfig.xml以达到使用最新JDO标准和DataNucleus的目的。
+
+### 更新jdoconfig.xml
+
+DataNucleus3中PersistenceManagerFactoryClass放到了org.datanucleus.api.jdo包中，因此下面会讲到要添加org.datanucleus-api-jdo的依赖。在jdoconfig.xml中将
+
+        <property name="javax.jdo.PersistenceManagerFactoryClass"
+                  value="org.datanucleus.store.appengine.jdo.DatastoreJDOPersistenceManagerFactory"/>
+
+替换为：
+
+        <property name="javax.jdo.PersistenceManagerFactoryClass" 
+                  value="org.datanucleus.api.jdo.PersistenceManagerFactoryClass"/>
+
+注意，Google官方文档中关于该项的配置是错的。jdoconfig.xml示例如下：
+
+	:::xml
+    <?xml version="1.0" encoding="utf-8"?>
+    <jdoconfig xmlns="http://java.sun.com/xml/ns/jdo/jdoconfig"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://java.sun.com/xml/ns/jdo/jdoconfig">
+
+        <persistence-manager-factory name="transactions-optional">
+            <property name="javax.jdo.PersistenceManagerFactoryClass"
+                value="org.datanucleus.api.jdo.JDOPersistenceManagerFactory"/>
+            <property name="javax.jdo.option.ConnectionURL" value="appengine"/>
+            <property name="javax.jdo.option.NontransactionalRead" value="true"/>
+            <property name="javax.jdo.option.NontransactionalWrite" value="true"/>
+            <property name="javax.jdo.option.RetainValues" value="true"/>
+            <property name="datanucleus.appengine.autoCreateDatastoreTxns" value="true"/>
+
+            <property name="datanucleus.appengine.singletonPMFForName" value="true"/>
+        </persistence-manager-factory>
+    </jdoconfig>
+
+
+### 更新pom.xml 以启用JDO3
+
+这一次我们需要添加datanucleus-api-jdo依赖：
+
+	:::xml
+        <dependency>
+            <groupId>org.datanucleus</groupId>
+            <artifactId>datanucleus-api-jdo</artifactId>
+            <version>3.0.7</version>
+        </dependency>
+
+更新datanucleus-appengine的版本到2.0.x：
+
+	:::xml
+        <dependency>
+            <groupId>com.google.appengine.orm</groupId>
+            <artifactId>datanucleus-appengine</artifactId>
+            <version>2.0.0</version>
+        </dependency>
+
+更新org.datanucleu的全部依赖到最新版本(3.x.x)，包括Plugin中配置的依赖版本也要更新。
+
+最后更新JDO API到3.0版本：
+
+	:::xml
+        <dependency>
+            <groupId>javax.jdo</groupId>
+            <artifactId>jdo-api</artifactId>
+            <version>3.0.1</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>javax.transaction</groupId>
+                    <artifactId>transaction-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+完整的pom.xml见 附件2：使用GAE+GWT+JDO3的pom.xml示例。
+
+现在让我们测试一下项目的运行结果：
+
+	mvn gae:run
+
+测试服务器启动后，在浏览器中打开<http://localhost:8080/>，就可以看到之前一样的页面了。插入一条测试数据，这时在控制台可能会发现抛出了运行时异常：
+
+	javax.servlet.ServletContext log: Exception while dispatching incoming RPC call
+	com.google.gwt.user.server.rpc.UnexpectedException: Service method 'public abstract void net.kindleit.gae.example.model.Messages.create(net.kindleit.gae.example.model.Message)' threw an unexpected exception: java.lang.NoSuchMethodError: 
+	com.google.appengine.datanucleus.DatastoreManager.getRuntimeManager()Lorg/datanucleus/management/runtime/StoreManagerRuntime;
+
+起初我以为项目运行失败了，但插入的数据是可以回显回来的，也就是说数据已经存储到了数据库中，打开<http://localhost:8080/_ah/admin>也验证了这一点。那么部署到会不会出错误呢？让我们来试验一下：
+
+	mvn gae:deploy
+
+上传成功后，测试我们的GAE项目（比如我的<http://gaegwtjdo3.appspot.com/>），同样可以正常运行，但也抛出了同样的异常。我至今还没有找到如何解决这个异常，也不清楚这一异常有多严重，毕竟并没有导致数据的持久化失败，Ajax也运行正常。如果你遇到了问题，或者找到了解决方案，欢迎来和我交流:)
+
+## 后记
+
+折腾GWT和GAE的这段时间里，我拿到了腾讯的实习生Offer，因此下一步要好好准备C/C++和脚本编程，可能不能花太多时间在Java上了。所以这个示例也就写到这了。
+
+下一步等有时间（可能在几周之内），我考虑再写一篇GAE+GWT的最佳实践，服务器端使用Google Guice作为依赖注入容器，JDO为持久层；客户端使用Google GIN作为依赖注入容器并使用MVC模式。暂定为[这篇教程](http://reminiscential.wordpress.com/2010/03/01/building-a-gaegwt-application-using-the-best-practices-index/)的翻译。
+
+## 附件
+
+### 附件1：使用GAE+GWT+JDO2的pom.xml示例
+
+直接覆盖掉你的pom.xml即可。
+
+	:::xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+        <modelVersion>4.0.0</modelVersion>
+
+        <groupId>com.cherrot</groupId>
+        <artifactId>gae-gwt-sample</artifactId>
+        <version>1.0-SNAPSHOT</version>
+        <packaging>war</packaging>
+
+        <name>gae-gwt-sample</name>
+
+        <repositories>
+            <repository>
+                <id>DataNucleus_Repos2</id>
+                <name>DataNucleus Repository</name>
+                <url>http://www.datanucleus.org/downloads/maven2</url>
+            </repository>
+        </repositories>
+
+        <pluginRepositories>
+            <pluginRepository>
+                <id>maven-gae-plugin-repo</id>
+                <name>Maven Google App Engine Repository</name>
+                <url>http://maven-gae-plugin.googlecode.com/svn/repository/</url>
+            </pluginRepository>
+            <pluginRepository>
+                <id>DataNucleus_2</id>
+                <url>http://www.datanucleus.org/downloads/maven2/</url>
+            </pluginRepository>
+        </pluginRepositories>
+
+        <dependencies>
+            <dependency>
+                <groupId>org.datanucleus</groupId>
+                <artifactId>datanucleus-jpa</artifactId>
+                <version>1.1.5</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-api-1.0-sdk</artifactId>
+                <version>${gae.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>javax.persistence</groupId>
+                <artifactId>persistence-api</artifactId>
+                <version>1.0.2</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.appengine.orm</groupId>
+                <artifactId>datanucleus-appengine</artifactId>
+                <version>1.0.10</version>
+            </dependency>
+            <dependency>
+                <groupId>org.datanucleus</groupId>
+                <artifactId>datanucleus-core</artifactId>
+                <version>1.1.6</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>javax.transaction</groupId>
+                        <artifactId>transaction-api</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>javax.transaction</groupId>
+                <artifactId>jta</artifactId>
+                <version>1.1</version>
+            </dependency>
+
+            <!-- GWT dependencies -->
+            <dependency>
+                <groupId>com.google.gwt</groupId>
+                <artifactId>gwt-servlet</artifactId>
+                <version>${gwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.gwt</groupId>
+                <artifactId>gwt-user</artifactId>
+                <version>${gwt.version}</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- J2EE Servlet API. We need it to compile IndexServlet class. You can probably remove
+    it, if you don't explicitly use Servlets -->
+            <dependency>
+                <groupId>org.apache.geronimo.specs</groupId>
+                <artifactId>geronimo-servlet_2.5_spec</artifactId>
+                <version>1.2</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- Make use of JSP tags. Remove, if you don't use JSPs -->
+            <dependency>
+                <artifactId>standard</artifactId>
+                <groupId>taglibs</groupId>
+                <version>1.1.2</version>
+                <type>jar</type>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- Test scope -->
+            <dependency>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+                <version>4.10</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- GAE libraries for local testing as described here: http://code.google.com/appengine/docs/java/howto/unittesting.html -->
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-api-labs</artifactId>
+                <version>${gae.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-api-stubs</artifactId>
+                <version>${gae.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-testing</artifactId>
+                <version>${gae.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>javax.jdo</groupId>
+                <artifactId>jdo2-api</artifactId>
+                <version>2.3-eb</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>javax.transaction</groupId>
+                        <artifactId>transaction-api</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+        </dependencies>
+
+
+        <build>
+            <plugins>
+                <plugin>
+                    <groupId>org.datanucleus</groupId>
+                    <artifactId>maven-datanucleus-plugin</artifactId>
+                    <version>1.1.4</version>
+                    <configuration>
+                        <mappingIncludes>**/model/*.class</mappingIncludes>
+                        <verbose>true</verbose>
+                        <enhancerName>ASM</enhancerName>
+                        <api>JDO</api>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <phase>process-classes</phase>
+                            <goals>
+                                <goal>enhance</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-core</artifactId>
+                            <version>1.1.6</version>
+                            <exclusions>
+                                <exclusion>
+                                    <groupId>javax.transaction</groupId>
+                                    <artifactId>transaction-api</artifactId>
+                                </exclusion>
+                            </exclusions>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-rdbms</artifactId>
+                            <version>1.1.6</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-enhancer</artifactId>
+                            <version>1.1.4</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>javax.jdo</groupId>
+                            <artifactId>jdo2-api</artifactId>
+                            <version>2.3-eb</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-jpa</artifactId>
+                            <version>1.1.5</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>2.2</version>
+                    <configuration>
+                        <webResources>
+                            <resource>
+                                <directory>src/main/webapp</directory>
+                                <filtering>true</filtering>
+                                <includes>
+                                    <include>*.xml</include>
+                                </includes>
+                            </resource>
+                        </webResources>
+                    </configuration>
+                </plugin>
+
+                <!-- Maven GWT plugin (ex. http://gwt-maven.googlecode.com/svn/docs/maven-googlewebtoolkit2-plugin/index.html)
+            http://mojo.codehaus.org/gwt-maven-plugin -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>gwt-maven-plugin</artifactId>
+                    <version>${gwt.version}</version>
+                    <configuration>
+                        <logLevel>INFO</logLevel>
+                        <!-- match -Dgae.port -->
+                        <port>${gae.port}</port>
+                        <!-- This is for generating Asynch interfaces -->
+                        <!-- <servicePattern>**/client/*Service.java</servicePattern> -->
+                        <extraJvmArgs>-Xmx512m</extraJvmArgs>
+                        <!--<jvm>${JAVA_HOME}/bin/java</jvm> -->
+                        <!--<noServer>false</noServer> -->
+                        <server>com.google.appengine.tools.development.gwt.AppEngineLauncher</server>
+                        <runTarget>/index.html</runTarget>
+                        <style>DETAILED</style>
+                        <webXml>war/WEB-INF/web.xml</webXml>
+                    </configuration>
+                    <executions>
+                        <!-- <execution> <id>generateAsynch</id> <phase>generate-sources</phase> <goals>
+                    <goal>generateAsync</goal> </goals> </execution> -->
+                        <execution>
+                            <phase>compile</phase>
+                            <goals>
+                                <goal>compile</goal>
+                                <goal>generateAsync</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>net.kindleit</groupId>
+                    <artifactId>maven-gae-plugin</artifactId>
+                    <version>0.9.2</version>
+                    <configuration>
+                        <jvmFlags>
+                            <jvmFlag>-Xdebug</jvmFlag>
+                            <jvmFlag>-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000</jvmFlag>
+                            <jvmFlag>-Dmail.log_mail_level=WARNING</jvmFlag>
+                            <jvmFlag>-Dmail.log_mail_body=true</jvmFlag>
+                        </jvmFlags>
+                        <severity>0</severity>
+                        <serverId>funny-pages</serverId>
+                    </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>net.kindleit</groupId>
+                            <artifactId>gae-runtime</artifactId>
+                            <version>${gaePlugin.version}</version>
+                            <type>pom</type>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+
+                <!-- Upload application to the appspot automatically, during release:perform -->
+                <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <configuration>
+                        <goals>gae:deploy</goals>
+                    </configuration>
+                </plugin>
+
+                <!-- Java compiler version -->
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>2.3.2</version>
+                    <configuration>
+                        <source>1.6</source>
+                        <target>1.6</target>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </build>
+
+        <!-- Specify hard-coded project properties here -->
+        <properties>
+            <gae.home>/home/cherrot/sdk/appengine-java-sdk</gae.home>
+            <!-- This is just for "eclipse:eclipse" goal to always attempt downloading sources -->
+            <downloadSources>true</downloadSources>
+            <!-- Specify AppEngine version for your project. It should match SDK version pointed to
+    by ${gae.home} property (Typically, one used by your Eclipse plug-in) -->
+            <gae.version>1.6.4.1</gae.version>
+            <gaePlugin.version>1.6.4</gaePlugin.version>
+            <!-- GWT version -->
+            <gwt.version>2.4.0</gwt.version>
+            <!-- Upload to http://test.latest.<applicationName>.appspot.com by default -->
+            <gae.application.version>test</gae.application.version>
+            <!-- port defaults to 8080 -->
+            <gae.port>8080</gae.port>
+            <!-- Produce detailed JS during GWT compilation for development environment -->
+            <gwt.style>DETAILED</gwt.style>
+        </properties>
+
+        <profiles>
+
+            <!-- We can configure our integration server to activate this profile and perform gae:deploy,
+    thus uploading latest snapshot to the http://1.latest.<applicationName>.appspot.com automatically -->
+            <profile>
+                <id>integration-build</id>
+                <properties>
+                    <gae.application.version>stage</gae.application.version>
+                    <!-- Produce pretty JS during GWT compilation for test environment -->
+                    <gwt.style>PRETTY</gwt.style>
+                </properties>
+            </profile>
+
+            <!-- This profile will activate automatically during release and upload application to
+    the http://2.latest.<applicationName>.appspot.com (We might want to set the 2nd version as
+    our applications Default version to be accessible at http://<applicationName>.appspot.com) -->
+            <profile>
+                <id>release-build</id>
+                <activation>
+                    <property>
+                        <name>performRelease</name>
+                        <value>true</value>
+                    </property>
+                </activation>
+                <properties>
+                    <!-- During release, set application version in appengine-web.xml to 2 -->
+                    <gae.application.version>release</gae.application.version>
+                    <!-- Produce compressed JS during GWT compilation for production environment -->
+                    <gwt.style>OBFUSCATED</gwt.style>
+                </properties>
+            </profile>
+        </profiles>
+    </project>
+
+### 附件2：使用GAE+GWT+JDO3的pom.xml示例
+
+直接覆盖掉你的pom.xml即可。
+
+	:::xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+        <modelVersion>4.0.0</modelVersion>
+
+        <groupId>com.cherrot</groupId>
+        <artifactId>gae-gwt-sample</artifactId>
+        <version>1.0-SNAPSHOT</version>
+        <packaging>war</packaging>
+
+        <name>gae-gwt-sample</name>
+
+        <repositories>
+            <repository>
+                <id>DataNucleus_Repos2</id>
+                <name>DataNucleus Repository</name>
+                <url>http://www.datanucleus.org/downloads/maven2</url>
+            </repository>
+        </repositories>
+
+        <pluginRepositories>
+            <pluginRepository>
+                <id>maven-gae-plugin-repo</id>
+                <name>Maven Google App Engine Repository</name>
+                <url>http://maven-gae-plugin.googlecode.com/svn/repository/</url>
+            </pluginRepository>
+            <pluginRepository>
+                <id>DataNucleus_2</id>
+                <url>http://www.datanucleus.org/downloads/maven2/</url>
+            </pluginRepository>
+        </pluginRepositories>
+
+        <dependencies>
+            <dependency>
+                <groupId>org.datanucleus</groupId>
+                <artifactId>datanucleus-api-jdo</artifactId>
+                <version>3.0.7</version>
+            </dependency>
+            <dependency>
+                <groupId>org.datanucleus</groupId>
+                <artifactId>datanucleus-api-jpa</artifactId>
+                <version>3.0.9</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-api-1.0-sdk</artifactId>
+                <version>${gae.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>javax.persistence</groupId>
+                <artifactId>persistence-api</artifactId>
+                <version>1.0.2</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.appengine.orm</groupId>
+                <artifactId>datanucleus-appengine</artifactId>
+                <version>2.0.0</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.datanucleus</groupId>
+                <artifactId>datanucleus-core</artifactId>
+                <version>3.1.0-m2</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>javax.transaction</groupId>
+                        <artifactId>transaction-api</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+
+            <dependency>
+                <groupId>javax.transaction</groupId>
+                <artifactId>jta</artifactId>
+                <version>1.1</version>
+            </dependency>
+
+            <!-- GWT dependencies -->
+            <dependency>
+                <groupId>com.google.gwt</groupId>
+                <artifactId>gwt-servlet</artifactId>
+                <version>${gwt.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.gwt</groupId>
+                <artifactId>gwt-user</artifactId>
+                <version>${gwt.version}</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- J2EE Servlet API. We need it to compile IndexServlet class. You can probably remove
+    it, if you don't explicitly use Servlets -->
+            <dependency>
+                <groupId>org.apache.geronimo.specs</groupId>
+                <artifactId>geronimo-servlet_2.5_spec</artifactId>
+                <version>1.2</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- Make use of JSP tags. Remove, if you don't use JSPs -->
+            <dependency>
+                <artifactId>standard</artifactId>
+                <groupId>taglibs</groupId>
+                <version>1.1.2</version>
+                <type>jar</type>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- Test scope -->
+            <dependency>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+                <version>4.10</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- GAE libraries for local testing as described here: http://code.google.com/appengine/docs/java/howto/unittesting.html -->
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-api-labs</artifactId>
+                <version>${gae.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-api-stubs</artifactId>
+                <version>${gae.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.google.appengine</groupId>
+                <artifactId>appengine-testing</artifactId>
+                <version>${gae.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>javax.jdo</groupId>
+                <artifactId>jdo-api</artifactId>
+                <version>3.0.1</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>javax.transaction</groupId>
+                        <artifactId>transaction-api</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+
+        </dependencies>
+
+
+        <build>
+            <plugins>
+                <plugin>
+                    <groupId>org.datanucleus</groupId>
+                    <artifactId>maven-datanucleus-plugin</artifactId>
+                    <version>3.1.0-m1</version>
+                    <configuration>
+                        <mappingIncludes>**/model/*.class</mappingIncludes>
+                        <verbose>true</verbose>
+                        <enhancerName>ASM</enhancerName>
+                        <api>JDO</api>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <phase>process-classes</phase>
+                            <goals>
+                                <goal>enhance</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-core</artifactId>
+                            <version>3.1.0-m2</version>
+                            <exclusions>
+                                <exclusion>
+                                    <groupId>javax.transaction</groupId>
+                                    <artifactId>transaction-api</artifactId>
+                                </exclusion>
+                            </exclusions>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-rdbms</artifactId>
+                            <version>3.1.0-m2</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-enhancer</artifactId>
+                            <version>3.0.1</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>javax.jdo</groupId>
+                            <artifactId>jdo-api</artifactId>
+                            <version>3.0.1</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-api-jpa</artifactId>
+                            <version>3.0.9</version>
+                        </dependency>
+                        <!--It seems that this dependency is unnessasary, maybe the datanucleus-api-jpa is unnessasary too-->
+                        <dependency>
+                            <groupId>org.datanucleus</groupId>
+                            <artifactId>datanucleus-api-jdo</artifactId>
+                            <version>3.0.7</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>2.2</version>
+                    <configuration>
+                        <webResources>
+                            <resource>
+                                <directory>src/main/webapp</directory>
+                                <filtering>true</filtering>
+                                <includes>
+                                    <include>*.xml</include>
+                                </includes>
+                            </resource>
+                        </webResources>
+                    </configuration>
+                </plugin>
+
+                <!-- Maven GWT plugin (ex. http://gwt-maven.googlecode.com/svn/docs/maven-googlewebtoolkit2-plugin/index.html)
+            http://mojo.codehaus.org/gwt-maven-plugin -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>gwt-maven-plugin</artifactId>
+                    <version>${gwt.version}</version>
+                    <configuration>
+                        <logLevel>INFO</logLevel>
+
+                        <!-- match -Dgae.port -->
+                        <port>${gae.port}</port>
+
+                        <!-- This is for generating Asynch interfaces -->
+                        <!-- <servicePattern>**/client/*Service.java</servicePattern> -->
+
+                        <extraJvmArgs>-Xmx512m</extraJvmArgs>
+                        <!--<jvm>${JAVA_HOME}/bin/java</jvm> -->
+                        <!--<noServer>false</noServer> -->
+                        <server>com.google.appengine.tools.development.gwt.AppEngineLauncher</server>
+
+                        <runTarget>/index.html</runTarget>
+                        <style>DETAILED</style>
+                        <webXml>war/WEB-INF/web.xml</webXml>
+                    </configuration>
+                    <executions>
+                        <!-- <execution> <id>generateAsynch</id> <phase>generate-sources</phase> <goals>
+                    <goal>generateAsync</goal> </goals> </execution> -->
+                        <execution>
+                            <phase>compile</phase>
+                            <goals>
+                                <goal>compile</goal>
+                                <goal>generateAsync</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>net.kindleit</groupId>
+                    <artifactId>maven-gae-plugin</artifactId>
+                    <version>0.9.2</version>
+                    <configuration>
+                        <jvmFlags>
+                            <jvmFlag>-Xdebug</jvmFlag>
+                            <jvmFlag>-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000</jvmFlag>
+                            <jvmFlag>-Dmail.log_mail_level=WARNING</jvmFlag>
+                            <jvmFlag>-Dmail.log_mail_body=true</jvmFlag>
+                        </jvmFlags>
+                        <severity>0</severity>
+                        <serverId>funny-pages</serverId>
+                    </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>net.kindleit</groupId>
+                            <artifactId>gae-runtime</artifactId>
+                            <version>${gaePlugin.version}</version>
+                            <type>pom</type>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+
+                <!-- Upload application to the appspot automatically, during release:perform -->
+                <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <configuration>
+                        <goals>gae:deploy</goals>
+                    </configuration>
+                </plugin>
+
+                <!-- Java compiler version -->
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>2.3.2</version>
+                    <configuration>
+                        <source>1.6</source>
+                        <target>1.6</target>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </build>
+
+        <!-- Specify hard-coded project properties here -->
+        <properties>
+            <gae.home>/home/cherrot/sdk/appengine-java-sdk</gae.home>
+            <!-- This is just for "eclipse:eclipse" goal to always attempt downloading sources -->
+            <downloadSources>true</downloadSources>
+            <!-- Specify AppEngine version for your project. It should match SDK version pointed to
+    by ${gae.home} property (Typically, one used by your Eclipse plug-in) -->
+            <gae.version>1.6.4.1</gae.version>
+            <gaePlugin.version>1.6.4</gaePlugin.version>
+            <!-- GWT version -->
+            <gwt.version>2.4.0</gwt.version>
+            <!-- Upload to http://test.latest.<applicationName>.appspot.com by default -->
+            <gae.application.version>test</gae.application.version>
+            <!-- port defaults to 8080 -->
+            <gae.port>8080</gae.port>
+            <!-- Produce detailed JS during GWT compilation for development environment -->
+            <gwt.style>DETAILED</gwt.style>
+        </properties>
+
+        <profiles>
+
+            <!-- We can configure our integration server to activate this profile and perform gae:deploy,
+    thus uploading latest snapshot to the http://1.latest.<applicationName>.appspot.com automatically -->
+            <profile>
+                <id>integration-build</id>
+                <properties>
+                    <gae.application.version>stage</gae.application.version>
+
+                    <!-- Produce pretty JS during GWT compilation for test environment -->
+                    <gwt.style>PRETTY</gwt.style>
+                </properties>
+            </profile>
+
+            <!-- This profile will activate automatically during release and upload application to
+    the http://2.latest.<applicationName>.appspot.com (We might want to set the 2nd version as
+    our applications Default version to be accessible at http://<applicationName>.appspot.com) -->
+            <profile>
+                <id>release-build</id>
+                <activation>
+                    <property>
+                        <name>performRelease</name>
+                        <value>true</value>
+                    </property>
+                </activation>
+
+                <properties>
+                    <!-- During release, set application version in appengine-web.xml to 2 -->
+                    <gae.application.version>release</gae.application.version>
+
+                    <!-- Produce compressed JS during GWT compilation for production environment -->
+                    <gwt.style>OBFUSCATED</gwt.style>
+                </properties>
+            </profile>
+        </profiles>
+
+    </project>
+
+[ref1]: http://www.cherrot.com/2012/04/developing-gwt-project-using-maven3-tutorial
+[ref2]: http://www.vertigrated.com/blog/2011/02/working-maven-3-google-app-engine-plugin-with-gwt-support/
+[jdo3]: http://datanucleus.blogspot.com/2011/08/gaej-and-datanucleus-v3.html
+[jdo3-google]: https://developers.google.com/appengine/docs/java/datastore/jdo/overview-dn2

@@ -1,0 +1,282 @@
+"=========== Meta ============
+"StrID : 1800
+"Title : git+uwsgi+nginx生产环境配置
+"Slug  : git-uwsgi-nginx-workflow
+"Cats  : Python, Linux
+"Tags  : git, django, nginx, uwsgi, python
+"=============================
+"EditType   : post
+"EditFormat : Markdown
+"TextAttach : wpid1801-vimpress_511b8710_mkd.txt
+"========== Content ==========
+
+**本文结构：**
+
+$TOC$
+
+先说点题外话。
+
+一直想用自己最擅长的只是做一个有趣的东西送给妹子做礼物的，为了避免不必要的麻烦，还不能做的太geek... 在IRC里玩的久了，觉得#ubuntu-cn里的kk机器人是个不错的点子。它其实也并不复杂，而且用的AI并非是基于汉语的，而是采取一种取巧的办法，先用开放API把句子翻译成英语，然后再使用英文现成的AI机器人程序给出答案，然后再翻译成中文，虽然这种方式带来的质量损失很大，但有时却能让你忍俊不禁。
+
+所以后来就想借助微信公共平台做一个机器人小应用，只是那段时间一直在瞎忙。后来又经历了很多刻骨铭心的事情，这件事情就这样搁浅了。但是冷静下来想想，该做的事还是要做，结果怎样不是我们可以预料的，但不去努力就只有不可能。所以在搁浅了两个月以后，这一计划在春节前重新开始实施了。决定使用微信，一是因为自己有内部优势，万一有什么问题搞不定，说不定能请到高手来帮忙；二是微信的火爆，早就吸引了成千上万做互联网营销互联网公关的人群，似乎人人都想抱一抱微信的大腿，我也就在这一潮流里简单图一乐:)
+
+因为我是个没钱的穷屌丝，开发时间有限，就不希望在应用部署上花时间，于是先把国内外各个云平台溜了一圈。GAE由于众所周知的原因直接就不考虑了，在openshift上试了一把，连接很不稳定，而且经常超时，不得已就跑到国内云平台上试验，部署到BAE上，但是BAE这类平台太难调试了。倒腾了两天，终于还是考虑先在VPS上部署了，等没有问题后再考虑往BAE上挪。
+
+于是，经历了不到一周的开发时间，萌娘b小梦终于在除夕这天正式上线了，本来也就是为了快乐，也不求有多少人关注。目前问答用的是SimSimi的数据，不过这终究不是长久之计，所以下一步要做的就是设计和实现一个自己的问答数据库。如果未来俩月能实现一个Demo，说不定帮妹子做成毕业设计也挺好看的。
+
+好记性不如烂笔头，大脑容量有限，继续开发之前，先记录下这两天的折腾历程来作为备忘。
+
+##配置Git代码仓库
+
+Git是分布式版本控制系统，但也可以有一个“中央仓库”的存在，接受其他人的push操作。git和其他主流版本控制系统不同的是，中央仓库必须是“裸仓库”，只保存版本信息（代码仓库里的.git目录保存的内容）而不存储实际工作文件。我需要做的是，在本地开发和测试和提交代码，检查无误后push代码到VPS服务器，然后服务器能自动检出(checkout)最新的工作区文件到web目录下。以下内容参考[A Git Primer][ref-git]。
+
+###在服务器上的工作
+
+1. 首先创建裸仓库：
+
+        :::sh
+        mkdir wechat.git && cd wechat.git
+        git --bare init #如果是已存在的仓库，可使用命令`git config --bool core.bare true`完成类似转换
+
+2. 添加post-receive钩子,push代码后自动检出文件。
+
+        :::sh
+        vim hooks/post-receive
+内容可参考如下脚本：
+
+        :::sh
+        #!/bin/sh
+        #检出最新工作区文件到 $HOME/wechat 目录下
+        GIT_WORK_TREE=$HOME/wechat git checkout -f
+        exit
+
+3. 添加可执行权限：
+
+        :::sh
+        chmod +x hooks/post-receive
+
+###在本地系统：
+
+在本地的开发步骤没有任何不同，创建/克隆版本库，编码，测试，提交，最后推送(push)到远程服务器：
+
+    :::sh
+    mkdir wechat && git init #创建git仓库
+    git remote add deploy git@cherrot.com:cherrot/wechat.git #添加远程仓库
+    echo 'This is my first python app' > README
+    git add .
+    git commit -m 'init my repo'
+    git push -u deploy master #向远程仓库推入代码
+
+现在登录到服务器看看~/wechat目录下（刚刚在post-receive钩子中设置的目录）是不是已经有了最新的代码拷贝？
+
+##安装python依赖和uwsgi
+
+服务器有python2.7环境，但除此之外一无所有。因为是借用别人的VPS，所以打算尽可能把需要的依赖都安装在自己的家目录下。python提供了这个便利。
+
+首先需要配置PYTHONPATH环境变量：
+
+    :::sh
+    mkdir -p ~/.local/lib/python2.7/site-packages/
+    echo 'PYTHONPATH=$HOME/.local/lib/python2.7/site-packages' >> ~/.profile
+    . ~/.profile
+
+###安装pip
+
+安装pip是为了以后安装第三方python库方便一些，我的项目里就用到很多第三方库，使用pip一条命令就搞定了。根据[安装说明][ref-pip-install]，首先安装依赖库[distribute][ref-distribute]:
+
+    :::sh
+    curl -O http://python-distribute.org/distribute_setup.py #参考distribute说明
+    python distribute_setup.py --help #查看帮助
+    python distribute_setup.py --user #将distribute安装到之前设置的PYTHONPATH路径下
+
+也可以安装setuptools(如果是python3环境，则只能安装distribute):
+
+    :::sh
+    curl -O http://pypi.python.org/packages/2.7/s/setuptools/setuptools-0.6c11-py2.7.egg
+    sh setuptools-0.6c11-py2.7.egg --prefix=~/.local
+
+然后就可以安装pip了，在[http://pypi.python.org/packages/source/p/pip/](http://pypi.python.org/packages/source/p/pip/)找到最新版本（目前是1.2），下载、安装之：
+
+    :::sh
+    curl -O http://pypi.python.org/packages/source/p/pip/pip-1.2.tar.gz
+    tar -xzvf pip-1.2.tar.gz
+    cd pip-1.2
+    python setup.py --help #查看帮助
+    python setup.py install --prefix=~/.local
+
+在这里提一句，安装到~/.local的python库，如果有可执行文件的话都放在了~/.local/bin目录下。所以建议把它加到PATH里，或者把目录下的文件软链接到PATH目录之一中，具体方法就不在这里罗嗦了。
+
+###编译安装[uWSGI][ref-uwsgi]
+
+虽说我一直是个Ubuntu Linux用户，但在服务器上一直有着编译安装的习惯;) 。参考[uWSGI的安装说明][ref-uwsgi-install]，编译前先解决依赖关系（笔者是Ubuntu系统）：
+
+    :::sh
+    sudo apt-get install build-essential python-dev libxml2-dev
+
+使用pip安装uWSGI到PYTHONPATH下：
+
+    :::sh
+    pip install --install-option="--prefix=~/.local" uwsgi
+
+耐心等待uWSGI完成编译安装就好咯。
+
+###安装其他python库
+
+应用中如果需要其他python库，基本上都可以使用pip安装。我的项目依赖requests和django，使用以下命令将它们安装到家目录下：
+
+    :::sh
+    pip install --install-option="--prefix=~/.local" requests
+    pip install --install-option="--prefix=~/.local" django==1.4.3
+
+###安装nginx
+
+偷懒了，没有自己编译，直接从软件源安装的(`sudo apt-get install nginx`)。就不多说了。
+
+##配置uWSGI和nginx
+
+uWSGI的相关配置很多，建议有事儿没事就去看看[uWSGI的最新文档][ref-uwsgi-doc]，比如对[配置脚本的详细解释][ref-uwsgi-config]等等。贴上我的配置：
+
+    :::xml
+    <uwsgi>
+        <!--<socket>127.0.0.1:9941</socket>-->
+        <socket>/home/cherrot/var/run/uwsgi.sock</socket>
+        <master /> 
+        <pidfile>/home/cherrot/var/run/uwsgi.pid</pidfile>  <!--进程pid号存放位置,使用该文件控制uWSGI服务器-->
+        <processes>2</processes> <!--并行进程数，一般而言进程数越高，能接受的并发连接越高-->
+        <pythonpath>/home/cherrot/wechat/</pythonpath> <!--应用的路径-->
+        <module>wsgi</module> <!--模块名，亦即wsgi入口文件-->
+        <!--<profiler>true</profiler>-->
+        <!--<memory-report />-->  <!--true</memory-report>-->
+        <enable-threads />  <!--启用多线程支持--><!--true</enable-threads>-->
+        <!--<wsgi-file>/srv/api/learner/learner/wsgi.py</wsgi-file> --> <!--#django自动生成的wsgi.py路径-->
+        <logdate>true</logdate>
+        <limit-as>6048</limit-as>
+        <daemonize>/home/cherrot/data/logs/uwsgi.error.log</daemonize> <!--指定log文件位置，后台运行-->
+    </uwsgi>
+
+将配置文件保存，之后便可以通过加载该配置文件启动uWSGI服务器，uWSGI也支持ini、json等配置方式。
+
+启动、重启、停止uWSGI:
+
+    :::sh
+    uwsgi -x /PATH/TO/YOUR/CONFIG_FILE.xml
+    uwsgi --reload /PATH/TO/YOUR/pidfile.pid
+    uwsgi --stop /PATH/TO/YOUR/pidfile.pid
+
+该去动nginx了，拷贝一个nginx虚拟主机示例配置到虚拟主机配置目录下，不同的发行版保存虚拟主机配置的位置不一样，在Ubuntu软件源中安装的版本会将虚拟主机配置放到 /etc/nginx/sites-enabled/ 目录下，当然你也可以放到conf.d目录中（看一下nginx.conf就明白啦）。贴上我的主要配置：
+
+    :::nginx
+    server {
+        #listen   80; ## listen for ipv4; this line is default and implied
+        listen   [::]:80; ##default_server ipv6only=on; ## listen for ipv6
+
+        root /home/cherrot/wechat;
+        index index.html;
+
+        # Make site accessible from http://localhost/
+        server_name mywechatbot.example.com;
+
+        autoindex on;
+        error_page 404 /404.html;
+
+        #uWSGI 相关配置，只需要2行就够咯～
+        location / {
+            #uwsgi_pass 127.0.0.1:9941; ##uWSGI监听的端口
+            uwsgi_pass unix:/home/cherrot/var/run/uwsgi.sock; ##uWSGI监听的端口
+            include uwsgi_params;
+        }
+
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$ {
+            expires 30d;
+        }
+
+        location ~ .*\.(js|css)?$ {
+            expires 2h;
+        }
+
+        location /static {
+            expires 1d;
+        }
+    }
+
+使用 nginx -t 命令检查配置是否正确，没问题的话，重启nginx服务器就可以看到你的python应用正常运行了！
+
+##Tips
+
++ 启动nginx时，提示80端口绑定失败，导致启动失败
+
+
+        :::text
+        Starting nginx: nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+        nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+        nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+        nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+        nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)
+        nginx: [emerg] still could not bind()
+
+    遇到这个错误，自然最先想到的是80端口遭占用。使用命令 `lsof -i :80` 查看是否有进程绑定了80端口（比如Apache2）。奇怪的是在我的VPS上没有任何其他进程使用80端口。所以这个错误实在是莫名其妙。经过一番google后才知道，需要设置所有虚拟主机配置中的listen字段（我这样说并不准确，但可以这样理解。详情请参考[http://wiki.nginx.org/HttpCoreModule#listen](http://wiki.nginx.org/HttpCoreModule#listen "nginx wiki 关于listen的说明")），因此修改`default`配置文件，将listen设置为`[::]:80;`即可。
+
++ 顺便记录一下php的配置，毕竟比较普遍。
+
+    nginx的配置:
+
+        :::nginx
+        server {
+            #listen   80; ## listen for ipv4; this line is default and implied
+            listen   [::]:80; # default ipv6only=on; ## listen for ipv6
+
+            root /home/cherrot/wordpress;
+            index index.php index.html index.htm;
+
+            # Make site accessible from http://localhost/
+            server_name cherrot.com test.cherrot.com;
+
+            location / {
+                    # First attempt to serve request as file, then
+                    # as directory, then fall back to index.html
+                    try_files $uri $uri/ /index.html;
+                    # Uncomment to enable naxsi on this location
+                    # include /etc/nginx/naxsi.rules
+                    # include /home/cherrot/dotfiles/rewrite_rule_wordpress.conf
+            }
+
+            error_page 404 /404.html;
+
+            # redirect server error pages to the static page /50x.html
+            #
+            #error_page 500 502 503 504 /50x.html;
+            #location = /50x.html {
+            #}
+
+            # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+            #
+            location ~ \.php$ {
+                    fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                    # NOTE: You should have "cgi.fix_pathinfo = 0;" in php.ini
+
+                    # With php5-cgi alone:
+                    #fastcgi_pass 127.0.0.1:9000;
+                    # With php5-fpm:
+                    fastcgi_pass unix:/var/run/php5-fpm.sock;
+                    fastcgi_index index.php;
+                    include fastcgi_params;
+            }
+
+            # deny access to .htaccess files, if Apache's document root
+            # concurs with nginx's one
+            #
+            location ~ /\.ht {
+                    deny all;
+            }
+        }
+
+    另外php需要安装php5-fpm，然后修改 `/etc/php5/fpm/pool.d/www.conf` ，将 `listen = 127.0.0.1:9000` 替换为 `listen = /var/run/php5-fpm.sock`
+    之后重启php5-fpm 和nginx即可。
+
+[ref-git]: http://danielmiessler.com/study/git/#website "Managing a Website Using git | A Git Primer"
+[ref-pip-install]: http://www.pip-installer.org/en/latest/installing.html "pip-installer guide"
+[ref-distribute]: http://pypi.python.org/pypi/distribute/
+[ref-uwsgi]: http://projects.unbit.it/uwsgi/
+[ref-uwsgi-doc]: http://uwsgi-docs.readthedocs.org/en/latest/index.html
+[ref-uwsgi-install]: http://uwsgi-docs.readthedocs.org/en/latest/Install.html
+[ref-uwsgi-config]: http://uwsgi-docs.readthedocs.org/en/latest/Options.html

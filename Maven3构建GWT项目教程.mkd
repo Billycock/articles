@@ -1,0 +1,234 @@
+"=========== Meta ============
+"StrID : 1482
+"Title : Maven3构建Google Web Toolkit项目教程
+"Slug  : developing-gwt-project-using-maven3-tutorial
+"Cats  : Java,Web
+"Tags  : GWT, Maven
+"=============================
+"EditType   : post
+"EditFormat : Markdown
+"TextAttach : wpid-wpid-wpid-wpid-vimpress_4f97e680_mkd.txt
+"========== Content ==========
+
+*注：如果你需要使用Maven构建GWT+GAE项目，请参考我的[下一篇教程][ref1]*
+
++ 本教程适合Maven2以上版本。若使用IDE，Netbeans原生支持Maven，Eclipse需要m2eclipse插件
++ 本教程使用[gwt-maven-plugin][ref3]和该插件提供的原型构建、运行和编译示例项目。
++ 本教程生成的代码托管在Github中，如果改进了示例代码，不保证会更新本文，因此请访问<https://github.com/cherrot/GWT-Maven3-Sample>获取最新代码。
+
+**本文结构：**
+
+$TOC$
+
+从周日折腾到今天，四天终于折腾出点东西来……咳咳……有点弱哈:D，主要原因是没仔细看文档，浮躁的折腾来折腾去，浪费了不少时间。
+
+在我的[上一篇文章][ref2]中，介绍了通过gwt-maven-plugin这款maven插件开发GWT+GAE项目，但文中的配置方法有很多问题，而且不够通用，继续折腾一天以后，决定用两篇教程分别阐述使用Maven开发GWT项目和使用Maven开发GAE+GWT项目的方案。闲话少说让我们开始吧。
+
+## 创建GWT项目
+
+为方便起见，本文使用gwt-maven-plugin提供的项目原型构建示例项目。如果使用Netbeans，那么请新建项目，选择Maven -`>` 基于原型的项目 -`>` 下一步 -`>` 找到Maven GWT Plugin(2.4.0) -`>` 下一步 -`>` 输入必要的属性 -`>` 完成。项目属性如下图所示。
+
+![Netbeans Maven GWT原型](http://i.imgur.com/LTGCF.png "Netbeans Maven GWT原型")
+
+或者直接使用Maven命令：
+
+	mvn archetype:generate -DarchetypeGroupId=org.codehaus.mojo -DarchetypeArtifactId=gwt-maven-plugin -DarchetypeVersion=2.4.0 -DarchetypeRepository=repo1.maven.org
+
+之后会提示你定义必要的属性，示例如下：
+
+	groupId: com.cherrot
+	artifactId: gwtSample
+	version: 1.0-SNAPSHOT
+	package: com.cherrot.gwtsample
+	module: GwtSample
+
+你可以自己定义这些属性，module请遵循Java类命名规范。如果你对Maven还不甚了解，建议先使用笔者的示例取值。
+
+如果正常，稍等片刻后就能看到当前目录下已经生成了gwtSample目录，这就是我们的Maven项目了。可能你的IDE会提示代码存在错误，不用管它，在我们第一次生成项目后错误自然会消失。在继续我们的教程前，请确保你的工作路径已切换到该目录下(cd gwtSample)。
+
+## 修改项目配置pom.xml
+
+如果察看源代码你会发现，这份原型已经帮我们完成了所有的代码，包括单元测试和国际化支持。现在打开项目配置文件pom.xml，你可以根据个人情况对该文件做些修改。我希望我的代码按照Java6规范编写和编译，因此在maven-compiler-plugin的配置中，将`<source>`和`<target>`的值全部改为1.6。
+
+小改后的pom.xml大概是这个样子（我将一些未来可能变动的值定义成了属性，并修改gwt-maven-plugin的version为${gwtVersion}）：
+
+	:::xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <!-- POM file generated with GWT webAppCreator -->
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.cherrot</groupId>
+    <artifactId>gwt-sample</artifactId>
+    <packaging>war</packaging>
+    <version>1.0-SNAPSHOT</version>
+    <name>GWT Maven Archetype</name>
+
+    <properties>
+        <!-- Convenience property to set the GWT version -->
+        <gwtVersion>2.4.0</gwtVersion>
+        <!-- GWT needs at least java 1.5 -->
+        <maven.compiler.source>1.6</maven.compiler.source>
+        <maven.compiler.target>1.6</maven.compiler.target>
+        <webappDirectory>${project.build.directory}/${project.build.finalName}</webappDirectory>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+        <groupId>com.google.gwt</groupId>
+        <artifactId>gwt-servlet</artifactId>
+        <version>${gwtVersion}</version>
+        <scope>runtime</scope>
+        </dependency>
+        <dependency>
+        <groupId>com.google.gwt</groupId>
+        <artifactId>gwt-user</artifactId>
+        <version>${gwtVersion}</version>
+        <scope>provided</scope>
+        </dependency>
+        <dependency>
+        <groupId>junit</groupId>
+        <artifactId>junit</artifactId>
+        <version>4.10</version>
+        <scope>test</scope>
+        </dependency>
+        <dependency>
+        <groupId>javax.validation</groupId>
+        <artifactId>validation-api</artifactId>
+        <version>1.0.0.GA</version>
+        <scope>test</scope>
+        </dependency>
+        <dependency>
+        <groupId>javax.validation</groupId>
+        <artifactId>validation-api</artifactId>
+        <version>1.0.0.GA</version>
+        <classifier>sources</classifier>
+        <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- Generate compiled stuff in the folder used for developing mode -->
+        <outputDirectory>${webappDirectory}/WEB-INF/classes</outputDirectory>
+
+    <plugins>
+
+    <!-- GWT Maven Plugin -->
+        <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>gwt-maven-plugin</artifactId>
+            <version>${gwtVersion}</version>
+            <executions>
+            <execution>
+                <goals>
+                <goal>compile</goal>
+                <goal>test</goal>
+                <goal>i18n</goal>
+                <goal>generateAsync</goal>
+                </goals>
+            </execution>
+            </executions>
+            <!-- Plugin configuration. There are many available options, see
+            gwt-maven-plugin documentation at codehaus.org -->
+            <configuration>
+            <extraJvmArgs>-Xmx1024M -Xss1024k</extraJvmArgs>
+            <runTarget>GwtSample.html</runTarget>
+            <hostedWebapp>${webappDirectory}</hostedWebapp>
+            <i18nMessagesBundle>com.cherrot.gwtsample.client.Messages</i18nMessagesBundle>
+            </configuration>
+        </plugin>
+
+    <!-- Copy static web files before executing gwt:run -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-war-plugin</artifactId>
+            <version>2.2</version>
+            <executions>
+            <execution>
+                <phase>compile</phase>
+                <goals>
+                <goal>exploded</goal>
+                </goals>
+            </execution>
+            </executions>
+            <configuration>
+            <webappDirectory>${webappDirectory}</webappDirectory>
+            </configuration>
+        </plugin>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>2.3.2</version>
+            <configuration>
+            <source>${maven.compiler.source}</source>
+            <target>${maven.compiler.target}</target>
+            </configuration>
+        </plugin>
+        </plugins>
+    </build>
+
+    </project>
+
+## 测试运行和打包(mvn install)
+
+好了，我们的项目已经创建完毕，现在我们可以测试一下代码的运行结果了。感谢gwt-maven-plugin，这一过程在Maven下如此简单，输入以下命令：
+
+	mvn gwt:run
+
+不多久就会弹出GWT Development Mode的Jetty服务器了。如图所示：
+
+![GWT Jetty服务器截图](http://i.imgur.com/sgosc.png "GWT开发模式服务器")
+
+点击 Lauch Default Browser按钮将会在浏览器中打开我们的示例网页，如果第一次运行GWT程序，你的浏览器会提示你安装GWT Developer Plugin插件，安装之后就可以看到我们的示例项目产生的Ajax页面如下所示：
+
+![GWT 示例页面截图](http://i.imgur.com/efqgv.png "GWT示例页面")
+
+一切OK！现在让我们编译打包这个GWT示例程序吧：
+
+	mvn install
+
+GWT的编译过程相当消耗资源，而且耗时较长，耐心等待，不出意外的话Maven会自豪的提示你BUILD SUCCESS。这时可以看到，gwtSample-1.0-SNAPSHOT.war 已经生成在target目录中了。
+
+## 注意事项
+
+注意，如果GWT编译器中途崩溃了，很可能是因为你的内存不足导致的，参考[这里](http://mojo.codehaus.org/gwt-maven-plugin/user-guide/compile.html)，我们需要在pom.xml中添加额外的JVM参数`<extraJvmArgs>`：
+
+	:::xml
+	<project>
+	  [...]
+	  <build>
+	    <plugins>
+	      [...]
+	      <plugin>
+	        <groupId>org.codehaus.mojo</groupId>
+	        <artifactId>gwt-maven-plugin</artifactId>
+	        <version>2.4.0</version>
+	        <executions>
+	          <execution>
+	            <configuration>
+	              <extraJvmArgs>-Xmx512M -Xss1024k</extraJvmArgs>
+	            </configuration>
+	            <goals>
+	              <goal>compile</goal>
+	            </goals>
+	          </execution>
+	        </executions>
+	      </plugin>
+	      [...]
+	    </plugins>
+	  </build>
+	  [...]
+	</project>
+
+如果想要实现更多项目构建功能，请一定先阅读一下gwt-maven-plugin插件的[官方文档][ref3]。文档描述的非常清楚易懂。比如[这里][ref4]还给出了如何使用插件集成多个GWT项目的说明。
+
+祝各位玩的愉快！
+
+[ref1]: http://www.cherrot.com/2012/04/developing-gae-gwt-project-using-maven-tutorial "使用Maven3构建GAE项目(集成GWT)"
+[ref2]: http://www.cherrot.com/2012/04/build-debug-deploy-gwt-gae-project-using-maven3 "使用Maven3构建、调试和部署GWT+GAE项目"
+[ref3]: http://mojo.codehaus.org/gwt-maven-plugin/ "gwt-maven-plugin主页"
+[ref4]: http://mojo.codehaus.org/gwt-maven-plugin/user-guide/multiproject.html "Multi-Project Setup"

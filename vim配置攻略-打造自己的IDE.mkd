@@ -1,0 +1,48 @@
+"=========== Meta ============
+"StrID : 1624
+"Title : vim配置攻略-打造自己的IDE
+"Slug  : vim-configure-notes
+"Cats  : Linux
+"Tags  : vim
+"=============================
+"EditType   : post
+"EditFormat : Markdown
+"TextAttach : vimpress_4fa272af_mkd.txt
+"========== Content ==========
+
+从这周开始又要开始忙了，可能一直到实习前也闲不下来了。目前的计划是5个工作日完成作业、实验和一切让人讨厌的东西。周六一天和周日的半天用来准备实习，主要是C/C++，Shell和python。周日下午+晚上用于市委网站项目的开发。其他晚上的时间用来读书:)
+
+如果把这个话题完整的写完估计我是心有余而力不足了。就只把我的学习过程贴到这吧。
+
+简单来说，我用了[白莲居](http://blog.pkufranky.com/)的一个脚本来管理vim插件，然后按照[Vimer的程序世界](http://www.vimer.cn/)的方法配置vim支持代码自动补全提示、C++ STL代码提示等功能。最后替换omnicppcomplete插件为neocomplcache以提高速度。
+
+##参考链接：
+
++ [把VIM打造成一个真正的IDE(1)][1]
++ [把VIM打造成一个真正的IDE(2)][2] 虽然这里作者使用的ctags，但其定义的函数已经可以支持cscope，而且跨平台
++ [把VIM打造成一个真正的IDE(3)][3]
++ [Vim在源代码中自动添加作者信息][4]
++ [在Vim中使用ctags][5]
++ [在Vim(gvim)中使用cscope][6]
++ [vim所支持的自动完成详解][7]
++ [让Vim(gvim)支持C++STL库的自动补全][8]
++ [vim插件的github镜像,便于使用白莲居的脚本管理和更新插件][vimGithub]
++ [白莲居-使用git和github来管理vim配置和插件][vimPluginGit]
++ [vim中使用markdown撰写Wordpress博文](http://www.cherrot.com/2012/03/wordpress-blogging-with-markdown-in-vim)
++ [vim速查][vimref]
+
+## 我的.vimrc配置
+
+想到这些配置以后很有可能不断变化，贴在这里早晚会过时。索性我的配置托管在github上，直接给地址好啦：<https://github.com/cherrot/dotfiles/blob/master/.vimrc>
+
+[1]: http://www.vimer.cn/2009/10/%E6%8A%8Avim%E6%89%93%E9%80%A0%E6%88%90%E4%B8%80%E4%B8%AA%E7%9C%9F%E6%AD%A3%E7%9A%84ide1.html
+[2]: http://www.vimer.cn/2009/10/%E6%8A%8Avim%E6%89%93%E9%80%A0%E6%88%90%E4%B8%80%E4%B8%AA%E7%9C%9F%E6%AD%A3%E7%9A%84ide2.html
+[3]: http://www.vimer.cn/2009/10/%E6%8A%8Avim%E6%89%93%E9%80%A0%E6%88%90%E4%B8%80%E4%B8%AA%E7%9C%9F%E6%AD%A3%E7%9A%84ide3.html
+[4]: http://www.vimer.cn/2009/10/%E7%94%A8vim%E5%9C%A8%E6%BA%90%E4%BB%A3%E7%A0%81%E4%B8%AD%E6%B7%BB%E5%8A%A0%E4%BD%A0%E7%9A%84%E4%B8%AA%E4%BA%BA%E4%BF%A1%E6%81%AF.html
+[5]: http://www.vimer.cn/2009/10/%E5%9C%A8vim%E4%B8%AD%E4%BD%BF%E7%94%A8ctags.html
+[6]: http://www.vimer.cn/2009/10/%E5%9C%A8vimgvim%E4%B8%AD%E4%BD%BF%E7%94%A8cscope.html
+[7]: http://www.vimer.cn/2010/01/vim%E6%89%80%E6%94%AF%E6%8C%81%E7%9A%84%E8%87%AA%E5%8A%A8%E5%AE%8C%E6%88%90%E8%AF%A6%E8%A7%A3.html
+[8]: http://www.vimer.cn/2010/01/%E8%AE%A9vimgvim%E6%94%AF%E6%8C%81%E8%A1%A5%E5%85%A8cstl%E5%BA%93.html
+[vimGithub]: https://github.com/vim-scripts
+[vimPluginGit]: http://blog.pkufranky.com/2011/11/%E4%BD%BF%E7%94%A8git%E5%92%8Cgithub%E6%9D%A5%E7%AE%A1%E7%90%86vim%E9%85%8D%E7%BD%AE%E5%92%8C%E6%8F%92%E4%BB%B6/
+[vimref]: http://vimcdoc.sourceforge.net/doc/quickref.html
